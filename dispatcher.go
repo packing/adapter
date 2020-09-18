@@ -1,11 +1,11 @@
 package main
 
 import (
-    "nbpyraw/nnet"
     "reflect"
 
     "github.com/packing/nbpy/codecs"
     "github.com/packing/nbpy/messages"
+    "github.com/packing/nbpy/nnet"
     "github.com/packing/nbpy/utils"
 )
 
@@ -17,7 +17,6 @@ func OnDeliver(msg *messages.Message) (error) {
     if body == nil {
         return nil
     }
-
 
     iSsids, ok := body[messages.ProtocolKeySessionId]
     if ok {
@@ -67,7 +66,6 @@ func OnSlaves(msg *messages.Message) (error) {
     if body == nil {
         return nil
     }
-
 
     iLocalhost, ok := body[messages.ProtocolKeyLocalHost]
     if ok {
