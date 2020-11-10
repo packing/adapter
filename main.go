@@ -7,6 +7,7 @@ import (
     "os"
     "runtime"
     "runtime/pprof"
+    "sync/atomic"
     "syscall"
     "time"
 
@@ -31,6 +32,8 @@ var (
     unixAddr  string
     unixMsgAddr string
 
+    onlyTCP   bool
+
     localhost string
 
     logDir   string
@@ -53,9 +56,64 @@ Options:
     flag.PrintDefaults()
 }
 
+var flowadd uint64 = 0
+
+func notify(tp int, c nnet.Controller) {
+    msg := messages.CreateS2SMessage(messages.ProtocolTypeDeliver)
+    msg.SetTag(messages.ProtocolTagSlave)
+
+    realMsg := messages.CreateS2SMessage(tp)
+    realMsg.SetSessionId([]nnet.SessionID{c.GetSessionID()})
+    realMsg.SetTag(messages.ProtocolTagSlave)
+
+    body := make(codecs.IMMap)
+    body[messages.ProtocolKeyHost] = c.GetSource()
+    realMsg.SetBody(body)
+
+    realMsgData, _ := messages.DataFromMessage(realMsg)
+    realMsgMap, ok := realMsgData.(codecs.IMMap)
+    if !ok {
+        return
+    }
+
+    msg.SetBody(realMsgMap)
+
+    ssid, si := pollFreeSlave()
+    if si != nil {
+        if si.host == localhost && si.unixAddr != "" {
+            data, err := messages.DataFromMessage(msg)
+            if err == nil {
+                mapSend, ok := data.(codecs.IMMap)
+                if ok {
+                    mapSend[messages.ProtocolKeyUnixAddr] = unixAddr
+                }
+                unix.SendTo(si.unixAddr, mapSend)
+            }
+        } else {
+            msg.SetSessionId([]nnet.SessionID{ssid})
+            data, err := messages.DataFromMessage(msg)
+            if err == nil {
+                tcpCtrl.Send(data)
+            }
+        }
+    }
+}
+
+var c2sin uint64 = 0
+var c2sout uint64 = 0
+
 func OnC2SDataDecoded(controller nnet.Controller, addr string, data codecs.IMData) error {
+    //utils.LogInfo("OnC2SDataDecoded")
+    atomic.AddUint64(&c2sin, 1)
+    defer atomic.AddUint64(&c2sout, 1)
+
+    tcpClient, ok := controller.(*nnet.TCPController)
+    if !ok {
+        return fmt.Errorf("ontroller is not a TCPController")
+    }
     mapData, ok := data.(codecs.IMMap)
     if !ok {
+        tcpClient.UnlockProcess()
         return messages.ErrorDataNotIsMessageMap
     }
 
@@ -80,14 +138,20 @@ func OnC2SDataDecoded(controller nnet.Controller, addr string, data codecs.IMDat
     }
 
     if isAdapterMsg {
-        return messages.GlobalMessageQueue.Push(controller, addr, mapData)
+        err := messages.GlobalMessageQueue.Push(controller, addr, mapData)
+        tcpClient.UnlockProcess()
+        return err
     } else {
+        atomic.AddUint64(&flowadd, 1)
         msg := messages.CreateS2SMessage(messages.ProtocolTypeDeliver)
         msg.SetTag(messages.ProtocolTagSlave)
+        if tcpClient.IsFlowMode() {
+            msg.SetErrorCode(-1)
+        }
         msg.SetBody(mapData)
         ssid, si := pollFreeSlave()
         if si != nil {
-            if si.host == localhost {
+            if si.host == localhost && si.unixAddr != "" {
                 data, err := messages.DataFromMessage(msg)
                 if err == nil {
                     mapSend, ok := data.(codecs.IMMap)
@@ -132,7 +196,10 @@ func OnS2SDataDecoded(controller nnet.Controller, addr string, data codecs.IMDat
     if isAdapterMsg {
         return messages.GlobalMessageQueue.Push(controller, addr, mapData)
     } else {
-
+        tcpClient, ok := controller.(*nnet.TCPController)
+        if ok {
+            tcpClient.UnlockProcess()
+        }
     }
 
     return nil
@@ -147,7 +214,9 @@ func sayHello() error {
     req := codecs.IMMap{}
     req[messages.ProtocolKeyId] = os.Getpid()
     req[messages.ProtocolKeyValue] = tcp.GetTotal()
-    req[messages.ProtocolKeyUnixAddr] = unixAddr
+    if !onlyTCP {
+        req[messages.ProtocolKeyUnixAddr] = unixAddr
+    }
     req[messages.ProtocolKeyUnixMsgAddr] = unixMsgAddr
 
     msg.SetBody(req)
@@ -182,6 +251,7 @@ func main() {
     flag.BoolVar(&version, "v", false, "print version")
     flag.BoolVar(&daemon, "d", false, "run at daemon")
     flag.BoolVar(&setsided, "s", false, "already run at daemon")
+    flag.BoolVar(&onlyTCP, "t", false, "only tcp tunnel")
     flag.StringVar(&addr, "c", "127.0.0.1:10088", "controller addr")
     flag.StringVar(&pprofFile, "f", "", "pprof file")
     flag.IntVar(&logLevel, "l", logLevel, "log level.(verbose:0,info:1,warn:2,error:3).default: 1")
@@ -284,6 +354,23 @@ func main() {
 
     tcp = nnet.CreateTCPServer()
     tcp.OnDataDecoded = OnC2SDataDecoded
+    tcp.ControllerCome = func(controller nnet.Controller) error {
+        //tcpClient, ok := controller.(*nnet.TCPController)
+        //if ok {
+            //tcpClient.SetFlowMode(true)
+            //tcpClient.SetFlowQueueLimit(64)
+        //}
+        return nil
+    }
+    tcp.OnWelcome = func(controller nnet.Controller) error {
+        notify(messages.ProtocolTypeClientEnter, controller)
+        return nil
+    }
+    tcp.OnBye = func(controller nnet.Controller) error {
+        notify(messages.ProtocolTypeClientLeave, controller)
+        utils.LogInfo("OnBye => %s", controller.GetSource())
+        return nil
+    }
     tcp.ServeWithoutListener()
 
     unixMsg = nnet.CreateUnixMsg()
@@ -312,15 +399,17 @@ func main() {
     go func() {
         for {
             if !daemon {
-                agvt, tmax, tmin := messages.GlobalDispatcher.GetAsyncInfo()
-                fmt.Printf(">>> 当前 事务 = [平均: %.2f, 峰值: %.2f | %.2f] 编码 = [编码: %.2f, 解码: %.2f] 网络 = [TCP读: %d, TCP写: %d, UNIX读: %d, UNIX写: %d, 句柄: %d]\r",
-                    float64(agvt)/float64(time.Millisecond), float64(tmin)/float64(time.Millisecond), float64(tmax)/float64(time.Millisecond),
-                    float64(nnet.GetEncodeAgvTime())/float64(time.Millisecond), float64(nnet.GetDecodeAgvTime())/float64(time.Millisecond),
+                //agvt, tmax, tmin := messages.GlobalDispatcher.GetAsyncInfo()
+                fmt.Printf(">>> 当前 网络 = [TCP读: %d, TCP写: %d, UNIX读: %d, UNIX写: %d, 句柄: %d, 连接: %d, 加解锁: %d / %d / %d, deliver: %d / %d, c2s: %d / %d]\r",
+                    //float64(agvt)/float64(time.Millisecond), float64(tmin)/float64(time.Millisecond), float64(tmax)/float64(time.Millisecond),
+                    //float64(nnet.GetEncodeAgvTime())/float64(time.Millisecond), float64(nnet.GetDecodeAgvTime())/float64(time.Millisecond),
                     nnet.GetTotalTcpRecvSize(),
                     nnet.GetTotalTcpSendSize(),
                     nnet.GetTotalUnixRecvSize(),
                     nnet.GetTotalUnixSendSize(),
-                    nnet.GetTotalHandleSendSize())
+                    nnet.GetTotalHandleSendSize(),
+                    tcp.GetTotal(),
+                        flowadd, flowret, flowrets, deliverin, deliverout, c2sin, c2sout)
             }
             runtime.Gosched()
             time.Sleep(1 * time.Second)

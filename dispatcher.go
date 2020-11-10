@@ -1,7 +1,8 @@
 package main
 
 import (
-    "reflect"
+    "fmt"
+    "sync/atomic"
 
     "github.com/packing/nbpy/codecs"
     "github.com/packing/nbpy/messages"
@@ -12,7 +13,28 @@ import (
 type AdapterMessageObject struct {
 }
 
+var flowret uint64 = 0
+var flowrets uint64 = 0
+var deliverin uint64 = 0
+var deliverout uint64 = 0
+
+func OnFlowReturn(msg *messages.Message) (error) {
+    atomic.AddUint64(&flowret, 1)
+    sessionIds := msg.GetSessionId()
+    if sessionIds == nil || len(sessionIds) == 0 {
+        return fmt.Errorf("missing key attribute sessionid for The OnFlowReturn")
+    }
+    client := tcp.GetController(sessionIds[0])
+    if client != nil {
+        client.UnlockProcess()
+        atomic.AddUint64(&flowrets, 1)
+    }
+    return nil
+}
+
 func OnDeliver(msg *messages.Message) (error) {
+    atomic.AddUint64(&deliverin, 1)
+    defer atomic.AddUint64(&deliverout, 1)
     body := msg.GetBody()
     if body == nil {
         return nil
@@ -23,7 +45,7 @@ func OnDeliver(msg *messages.Message) (error) {
         sess, _ := iSsids.(codecs.IMSlice)
         ssids := make([]nnet.SessionID, len(sess))
         for i, sid := range sess {
-            ssid := reflect.ValueOf(sid).Uint()
+            ssid := codecs.Uint64FromInterface(sid)
             ssids[i] = nnet.SessionID(ssid)
         }
         delete(body, messages.ProtocolKeySessionId)
@@ -79,9 +101,8 @@ func OnSlaves(msg *messages.Message) (error) {
                 m, ok := l.(codecs.IMMap)
                 if ok {
                     mr := codecs.CreateMapReader(m)
-                    iSessionId := mr.TryReadValue(messages.ProtocolKeySessionId)
-                    sessionId, ok := iSessionId.(uint)
-                    if ok {
+                    sessionId := mr.UintValueOf(messages.ProtocolKeySessionId, 0)
+                    if sessionId > 0 {
                         var si SlaveInfo
                         si.vmFree = int(mr.IntValueOf(messages.ProtocolKeyValue, 0))
                         si.host = mr.StrValueOf(messages.ProtocolKeyHost, "")
@@ -93,6 +114,7 @@ func OnSlaves(msg *messages.Message) (error) {
             }
         }
     }
+    utils.LogInfo("Slave 列表接收完毕, 本机主机为: %s", localhost)
 
     return nil
 }
@@ -104,9 +126,8 @@ func OnSlaveCome(msg *messages.Message) (error) {
     }
 
     mr := codecs.CreateMapReader(body)
-    iSessionId := mr.TryReadValue(messages.ProtocolKeySessionId)
-    sessionId, ok := iSessionId.(uint)
-    if ok {
+    sessionId := mr.UintValueOf(messages.ProtocolKeySessionId, 0)
+    if sessionId > 0 {
         var si SlaveInfo
         si.vmFree = int(mr.IntValueOf(messages.ProtocolKeyValue, 0))
         si.host = mr.StrValueOf(messages.ProtocolKeyHost, "")
@@ -126,9 +147,8 @@ func OnSlaveBye(msg *messages.Message) (error) {
     }
 
     mr := codecs.CreateMapReader(body)
-    iSessionId := mr.TryReadValue(messages.ProtocolKeySessionId)
-    sessionId, ok := iSessionId.(uint)
-    if ok {
+    sessionId := mr.UintValueOf(messages.ProtocolKeySessionId, 0)
+    if sessionId > 0 {
         delSlave(nnet.SessionID(sessionId))
         utils.LogInfo("Slave (%d) 离线", sessionId)
     }
@@ -143,9 +163,8 @@ func OnSlaveChange(msg *messages.Message) (error) {
     }
 
     mr := codecs.CreateMapReader(body)
-    iSessionId := mr.TryReadValue(messages.ProtocolKeySessionId)
-    sessionId, ok := iSessionId.(uint)
-    if ok {
+    sessionId := mr.UintValueOf(messages.ProtocolKeySessionId, 0)
+    if sessionId > 0 {
         var si SlaveInfo
         si.vmFree = int(mr.IntValueOf(messages.ProtocolKeyValue, 0))
         si.host = mr.StrValueOf(messages.ProtocolKeyHost, "")
@@ -160,6 +179,7 @@ func OnSlaveChange(msg *messages.Message) (error) {
 
 func (receiver AdapterMessageObject) GetMappedTypes() (map[int]messages.MessageProcFunc) {
     msgMap := make(map[int]messages.MessageProcFunc)
+    msgMap[messages.ProtocolTypeFlowReturn] = OnFlowReturn
     msgMap[messages.ProtocolTypeDeliver] = OnDeliver
     msgMap[messages.ProtocolTypeKillClient] = OnKill
     msgMap[messages.ProtocolTypeSlaves] = OnSlaves
@@ -173,23 +193,20 @@ type ClientMessageObject struct {
 }
 
 func OnHeart(msg *messages.Message) (error) {
+    defer func() {
+        tcpClient, ok := msg.GetController().(*nnet.TCPController)
+        if ok {
+            tcpClient.UnlockProcess()
+        }
+    }()
     body := msg.GetBody()
     if body == nil {
         return nil
     }
-    //reader := codecs.CreateMapReader(body)
-    //tv := reader.IntValueOf(messages.ProtocolKeyValue, 0)
-    //utils.LogInfo("客户端心跳, time -> %d", tv, msg.GetSessionId())
-
-    //body[messages.ProtocolKeyValue] = time.Now().UnixNano()
-    //msg.SetBody(body)
-    //msg.SetScheme(messages.ProtocolSchemeS2C)
-    //msg.SetTag(messages.ProtocolTagClient)
     data, err := messages.DataFromMessage(msg)
     if err == nil {
         _, err = tcp.Send(msg.GetSessionId()[0], data)
     }
-    //tcp.Send(msg.GetSessionId()[0], msg.GetSrcData())
     return nil
 }
 
