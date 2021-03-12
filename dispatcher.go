@@ -2,12 +2,11 @@ package main
 
 import (
     "fmt"
-    "sync/atomic"
-
     "github.com/packing/nbpy/codecs"
     "github.com/packing/nbpy/messages"
     "github.com/packing/nbpy/nnet"
     "github.com/packing/nbpy/utils"
+    "sync/atomic"
 )
 
 type AdapterMessageObject struct {
@@ -18,7 +17,7 @@ var flowrets uint64 = 0
 var deliverin uint64 = 0
 var deliverout uint64 = 0
 
-func OnFlowReturn(msg *messages.Message) (error) {
+func OnFlowReturn(msg *messages.Message) error {
     atomic.AddUint64(&flowret, 1)
     sessionIds := msg.GetSessionId()
     if sessionIds == nil || len(sessionIds) == 0 {
@@ -32,7 +31,7 @@ func OnFlowReturn(msg *messages.Message) (error) {
     return nil
 }
 
-func OnDeliver(msg *messages.Message) (error) {
+func OnDeliver(msg *messages.Message) error {
     atomic.AddUint64(&deliverin, 1)
     defer atomic.AddUint64(&deliverout, 1)
     body := msg.GetBody()
@@ -57,7 +56,7 @@ func OnDeliver(msg *messages.Message) (error) {
     return nil
 }
 
-func OnKill(msg *messages.Message) (error) {
+func OnKill(msg *messages.Message) error {
     body := msg.GetBody()
     if body == nil {
         return nil
@@ -83,7 +82,7 @@ func OnKill(msg *messages.Message) (error) {
     return nil
 }
 
-func OnSlaves(msg *messages.Message) (error) {
+func OnSlaves(msg *messages.Message) error {
     body := msg.GetBody()
     if body == nil {
         return nil
@@ -119,7 +118,7 @@ func OnSlaves(msg *messages.Message) (error) {
     return nil
 }
 
-func OnSlaveCome(msg *messages.Message) (error) {
+func OnSlaveCome(msg *messages.Message) error {
     body := msg.GetBody()
     if body == nil {
         return nil
@@ -140,7 +139,7 @@ func OnSlaveCome(msg *messages.Message) (error) {
     return nil
 }
 
-func OnSlaveBye(msg *messages.Message) (error) {
+func OnSlaveBye(msg *messages.Message) error {
     body := msg.GetBody()
     if body == nil {
         return nil
@@ -156,7 +155,7 @@ func OnSlaveBye(msg *messages.Message) (error) {
     return nil
 }
 
-func OnSlaveChange(msg *messages.Message) (error) {
+func OnSlaveChange(msg *messages.Message) error {
     body := msg.GetBody()
     if body == nil {
         return nil
@@ -177,7 +176,7 @@ func OnSlaveChange(msg *messages.Message) (error) {
     return nil
 }
 
-func (receiver AdapterMessageObject) GetMappedTypes() (map[int]messages.MessageProcFunc) {
+func (receiver AdapterMessageObject) GetMappedTypes() map[int]messages.MessageProcFunc {
     msgMap := make(map[int]messages.MessageProcFunc)
     msgMap[messages.ProtocolTypeFlowReturn] = OnFlowReturn
     msgMap[messages.ProtocolTypeDeliver] = OnDeliver
@@ -192,7 +191,7 @@ func (receiver AdapterMessageObject) GetMappedTypes() (map[int]messages.MessageP
 type ClientMessageObject struct {
 }
 
-func OnHeart(msg *messages.Message) (error) {
+func OnHeart(msg *messages.Message) error {
     defer func() {
         tcpClient, ok := msg.GetController().(*nnet.TCPController)
         if ok {
@@ -210,7 +209,7 @@ func OnHeart(msg *messages.Message) (error) {
     return nil
 }
 
-func (receiver ClientMessageObject) GetMappedTypes() (map[int]messages.MessageProcFunc) {
+func (receiver ClientMessageObject) GetMappedTypes() map[int]messages.MessageProcFunc {
     msgMap := make(map[int]messages.MessageProcFunc)
     msgMap[messages.ProtocolTypeHeart] = OnHeart
     return msgMap

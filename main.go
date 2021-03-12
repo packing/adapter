@@ -309,6 +309,9 @@ func main() {
 
     utils.LogInit(logLevel, logDir)
     //注册解码器
+    //codecs.CodecIMv2.Decoder.SetByteOrder(binary.LittleEndian)
+    //codecs.CodecIMv2.Encoder.SetByteOrder(binary.LittleEndian)
+
     env.RegisterCodec(codecs.CodecIMv2)
     env.RegisterCodec(codecs.CodecJSONv1)
 
