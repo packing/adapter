@@ -24,7 +24,6 @@ var (
     version bool
 
     daemon   bool
-    setsided bool
 
     pprofFile string
     addr      string
@@ -250,7 +249,6 @@ func main() {
     flag.BoolVar(&help, "h", false, "this help")
     flag.BoolVar(&version, "v", false, "print version")
     flag.BoolVar(&daemon, "d", false, "run at daemon")
-    flag.BoolVar(&setsided, "s", false, "already run at daemon")
     flag.BoolVar(&onlyTCP, "t", false, "only tcp tunnel")
     flag.StringVar(&addr, "c", "127.0.0.1:10088", "controller addr")
     flag.StringVar(&pprofFile, "f", "", "pprof file")
@@ -271,7 +269,7 @@ func main() {
     if !daemon {
         logDir = ""
     } else {
-        if !setsided {
+        if os.Getppid() != 1 {
             utils.Daemon()
             return
         }
