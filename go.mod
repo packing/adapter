@@ -2,4 +2,4 @@ module adapter
 
 go 1.16
 
-require github.com/packing/nbpy v0.0.0-20210310144906-2c5a92094017
+require github.com/packing/clove v0.0.0-20210408115056-76701614d514

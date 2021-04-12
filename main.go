@@ -11,12 +11,12 @@ import (
     "syscall"
     "time"
 
-    "github.com/packing/nbpy/codecs"
-    "github.com/packing/nbpy/env"
-    "github.com/packing/nbpy/messages"
-    "github.com/packing/nbpy/nnet"
-    "github.com/packing/nbpy/packets"
-    "github.com/packing/nbpy/utils"
+    "github.com/packing/clove/codecs"
+    "github.com/packing/clove/env"
+    "github.com/packing/clove/messages"
+    "github.com/packing/clove/nnet"
+    "github.com/packing/clove/packets"
+    "github.com/packing/clove/utils"
 )
 
 var (

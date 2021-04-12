@@ -3,7 +3,7 @@ package main
 import (
     "sync"
 
-    "github.com/packing/nbpy/nnet"
+    "github.com/packing/clove/nnet"
 )
 
 type SlaveInfo struct {

@@ -2,11 +2,12 @@ package main
 
 import (
     "fmt"
-    "github.com/packing/nbpy/codecs"
-    "github.com/packing/nbpy/messages"
-    "github.com/packing/nbpy/nnet"
-    "github.com/packing/nbpy/utils"
     "sync/atomic"
+
+    "github.com/packing/clove/codecs"
+    "github.com/packing/clove/messages"
+    "github.com/packing/clove/nnet"
+    "github.com/packing/clove/utils"
 )
 
 type AdapterMessageObject struct {
