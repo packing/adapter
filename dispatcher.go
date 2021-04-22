@@ -58,6 +58,7 @@ func OnDeliver(msg *messages.Message) error {
 }
 
 func OnKill(msg *messages.Message) error {
+
     body := msg.GetBody()
     if body == nil {
         return nil
@@ -73,9 +74,12 @@ func OnKill(msg *messages.Message) error {
     sessionIds, ok := iSessionIds.(codecs.IMSlice)
     if ok {
         for _, session := range sessionIds {
-            sid, ok := session.(int64)
-            if ok {
-                utils.LogInfo("踢出客户端 %d 的连接", sid)
+            sid := codecs.Int64FromInterface(session)
+            if sid > 0 {
+                e := tcp.CloseController(nnet.SessionID(sid))
+                if e == nil {
+                    utils.LogInfo("踢出客户端 %d 的连接", sid)
+                }
             }
         }
     }
