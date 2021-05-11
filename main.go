@@ -397,6 +397,7 @@ func main() {
         sayHello()
     }
 
+    /*
     go func() {
         for {
             if !daemon {
@@ -415,7 +416,7 @@ func main() {
             runtime.Gosched()
             time.Sleep(1 * time.Second)
         }
-    }()
+    }()*/
 
     go func() {
         for {
