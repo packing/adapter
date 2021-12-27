@@ -102,7 +102,6 @@ var c2sin uint64 = 0
 var c2sout uint64 = 0
 
 func OnC2SDataDecoded(controller nnet.Controller, addr string, data codecs.IMData) error {
-    //utils.LogInfo("OnC2SDataDecoded")
     atomic.AddUint64(&c2sin, 1)
     defer atomic.AddUint64(&c2sout, 1)
 
